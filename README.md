@@ -128,3 +128,9 @@ Dockerfile                # hand/ghcr image (COPYs committed dist/)
 Dockerfile.ci             # CI image: builds dist/ from source (node → nginx)
 ci/Jenkinsfile            # Jenkins: docker build Dockerfile.ci → push to Harbor
 ```
+
+## License
+
+Released under the **Apache License, Version 2.0** — see [LICENSE](LICENSE).
+Copyright 2025 Hashbin Contributors. This matches the licensing already used in the
+sibling [`hashbin-time-vault`](../hashbin-time-vault) repo.

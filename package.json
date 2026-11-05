@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Static, dependency-free frontend for the hashbin-quarkus backend.",
+  "license": "Apache-2.0",
   "engines": {
     "node": ">=20"
   },
