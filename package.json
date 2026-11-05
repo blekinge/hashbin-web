@@ -1,0 +1,16 @@
+{
+  "name": "hashbin-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Static, dependency-free frontend for the hashbin-quarkus backend.",
+  "scripts": {
+    "build": "tsc -p . && npm run copy",
+    "copy": "node scripts/copy-static.mjs",
+    "watch": "tsc -p . --watch",
+    "serve": "node scripts/serve.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}
