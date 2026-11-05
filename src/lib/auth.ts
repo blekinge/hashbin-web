@@ -59,7 +59,7 @@ function clearSession(): void {
 }
 
 /** The bearer token, or null when signed out or expired. */
-export function getToken(): string | null {
+function getToken(): string | null {
   const token = read(TOKEN_KEY);
   if (!token) return null;
   const exp = Number(read(EXP_KEY) || "0");
