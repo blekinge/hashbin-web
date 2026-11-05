@@ -1,13 +1,14 @@
-# Noise that neither image recipe reads. Everything else MUST stay in the build context:
-# the hand `Dockerfile` COPYs nginx.conf + dist/, and the CI `Dockerfile.ci` compiles from
-# src/ + public/ + scripts/ + package*.json + tsconfig.json.
+# Noise that the image recipe doesn't read. Everything else MUST stay in the build context:
+# `Dockerfile.ci` compiles from src/ + public/ + scripts/ + package*.json + tsconfig.json
+# (Dockerfile.ci is read by the builder outside the context, so it's safely ignored here).
+# `dist/` is build output (not committed) and Dockerfile.ci rebuilds it, so ignore it too.
 node_modules
 .tools
+dist
 .git
 .github
 .idea
 *.log
-Dockerfile
 Dockerfile.ci
 .dockerignore
 .gitignore

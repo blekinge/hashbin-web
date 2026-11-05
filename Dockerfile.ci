@@ -2,11 +2,11 @@
 ####
 # CI build recipe for the hashbin-web static image: it compiles dist/ FROM SOURCE inside a
 # pinned Node stage, then serves it with nginx. Mirrors hashbin-quarkus's
-# `Dockerfile.native-multi-stage` — CI builds the artifact, so the pushed image does NOT depend
-# on the committed dist/ being up to date. Driven by ci/Jenkinsfile (single build, no tests).
+# `Dockerfile.native-multi-stage` — the image is built from source, so it never relies on a
+# pre-existing dist/ (dist/ is git-ignored build output). Driven by ci/Jenkinsfile (single build).
 #
-# The sibling `Dockerfile` (which COPYs the committed dist/) is kept for the hand / ghcr path
-# and for `hashbin-deploy`'s README build step; this file is what Jenkins pushes to Harbor.
+# This is the single image recipe: Jenkins builds and pushes it to Harbor, and manual / offline
+# builds use the same file (it compiles from source, so it needs no local dist/).
 #
 # Manual build (same as the pipeline runs):
 #   DOCKER_BUILDKIT=1 docker build --target final -t hashbin-web:ci -f Dockerfile.ci .

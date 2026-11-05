@@ -6,9 +6,11 @@
 # PATH, otherwise downloads that exact version into .tools/ (git-ignored). Then it
 # installs the pinned dev dependency (typescript) and builds dist/.
 #
-# You almost never need this: dist/ is committed and CI rebuilds it, so deploying
-# needs no Node at all. Use ./build.sh only to regenerate dist/ locally after
-# editing src/.
+# You build, you don't deploy a committed artifact: `dist/` is git-ignored build output (like
+# Java's `target/`). Run this (or `npm run build`) to (re)generate `dist/` locally — e.g. to serve
+# the UI from the backend's same-origin `web` profile, to preview with `npm run serve`, or to
+# inspect the compiled bundle. CI rebuilds `dist/` from source inside the image, so it doesn't
+# use this script.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -47,4 +49,4 @@ if [ ! -x node_modules/.bin/tsc ]; then
 fi
 
 npm run build
-echo ">> Done. Serve dist/ (needs no Node). It is also committed, and CI keeps it fresh."
+echo ">> Done. dist/ is ready — it is build output (git-ignored), not committed. Serve it, or run quarkus:dev for same-origin."

@@ -12,25 +12,24 @@ Lovable. Files are hashed entirely in the browser; only the digests are sent.
 - Multi-page static site (one `.html` per view) with a tiny shared DOM/layout module.
 - Web Crypto (`crypto.subtle`) for SHA-1/256/512; a pure-JS MD5 (SubtleCrypto has none).
 
-The build output in `dist/` is **pure static files** — host it on any static host, or
-copy it behind a reverse proxy that also serves the API. It is committed, so you can
-deploy without running a build.
+The build output in `dist/` is **pure static files** — host it on any static host, or copy it
+behind a reverse proxy that also serves the API. Like a Java `target/`, `dist/` is **build output
+and is not tracked in git** — you generate it with a build (see "Toolchain").
 
-## Toolchain (you don't manage this)
+## Toolchain
 
-Building needs only `tsc`, and it is fully pinned and self-contained:
+Building needs only `tsc`, fully pinned and self-contained. `dist/` is a build artifact
+(like Java's `target/`) and is **not committed** — generate it whenever you need it:
 
-- **Deploying needs nothing.** The compiled `dist/` is committed — host it as-is (the
-  backend `web` profile, or an nginx pod, just serve those static files). No Node, no npm.
+- **Build the site:** `npm install && npm run build` → `dist/` (tsc → `dist/js`, then
+  `copy-static.mjs` copies `public/` → `dist/`). Serve `dist/` on any static host, setting
+  `apiBase` in `dist/config.js` to match wherever the API is reachable from there.
+- **No toolchain? Use `./build.sh`.** It downloads the exact Node pinned in `.nvmrc` into
+  git-ignored `.tools/` (unless a compatible one is already on `PATH`), installs the pinned
+  `typescript`, and emits `dist/`.
 - **CI builds the image from source.** Jenkins runs `Dockerfile.ci` (a Node stage compiles
-  `src/` + `public/` into `dist/`, nginx serves it) and pushes the image to the org Harbor —
-  so the *published image* is always fresh, regardless of the committed `dist/`. See "CI
-  (Jenkins)" below.
-- **To refresh the committed `dist/`, run `./build.sh`.** Do this before editing-and-committing
-  `src/`, because the committed `dist/` is what the hand `Dockerfile` (ghcr) build and the
-  backend's same-origin `web` dev profile serve. Jenkins does **not** commit `dist/` back.
-  `./build.sh` downloads the exact Node pinned in `.nvmrc` into git-ignored `.tools/` (unless a
-  compatible one is already on `PATH`), installs the pinned `typescript`, and emits `dist/`.
+  `src/` + `public/` into `dist/`, nginx serves it) and pushes to the org Harbor — so the
+  published image is built fresh and never depends on a local `dist/`. See "CI (Jenkins)" below.
 
 ## Pages
 
@@ -57,8 +56,8 @@ For local development against the Quarkus dev server, set it to
 ## Local development
 
 **Same-origin (recommended).** If the backend repo `../hashbin-quarkus` is present, its
-build auto-detects this app's `dist/` and serves it from the same origin — so there is
-no CORS and `config.js` can stay at its default `apiBase: "/api"`.
+build auto-detects this app's `dist/` (once you've built it) and serves it from the same
+origin — so there is no CORS and `config.js` can stay at its default `apiBase: "/api"`.
 
 ```bash
 # terminal 1 — build this app (src -> dist/js, then copy public -> dist)
@@ -103,11 +102,11 @@ the `hashbin-quarkus` pipeline, minus the JDK/test stage.
 The image is built **from source** by [`Dockerfile.ci`](Dockerfile.ci): a pinned
 `node:22.23.4-alpine` stage runs `npm ci` + `npm run build` (tsc → `dist/js`, then
 `copy-static.mjs` copies `public/` → `dist/`), and a `nginxinc/nginx-unprivileged` stage serves
-`dist/` on port 8080. Because CI compiles from `src/`, the pushed image never depends on the
-committed `dist/` being current.
+`dist/` on port 8080. Because CI compiles from `src/`, nothing in the pipeline depends on a
+committed `dist/` (there is none — `dist/` is git-ignored build output).
 
-The plain [`Dockerfile`](Dockerfile) (single stage, `COPY dist/`) remains for the hand / ghcr
-build and `hashbin-deploy`'s README build step.
+`Dockerfile.ci` is the single image recipe: Jenkins builds it, and manual/offline builds use the
+same file — `DOCKER_BUILDKIT=1 docker build --target final -f Dockerfile.ci .`.
 
 ## Layout
 
@@ -124,8 +123,7 @@ public/config.js    # runtime API base
 public/styles.css   # single hand-written stylesheet (dark-mode aware)
 scripts/copy-static.mjs   # build: copy public/ → dist/
 scripts/serve.mjs         # zero-dep static server for local preview
-Dockerfile                # hand/ghcr image (COPYs committed dist/)
-Dockerfile.ci             # CI image: builds dist/ from source (node → nginx)
+Dockerfile.ci             # single image recipe (CI + manual): builds dist/ from source (node → nginx)
 ci/Jenkinsfile            # Jenkins: docker build Dockerfile.ci → push to Harbor
 ```
 
