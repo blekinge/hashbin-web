@@ -40,18 +40,31 @@ For local development against the Quarkus dev server, set it to
 
 ## Local development
 
-Requires the backend running and Node only for the TypeScript compiler.
+**Same-origin (recommended).** If the backend repo `../hashbin-quarkus` is present, its
+build auto-detects this app's `dist/` and serves it from the same origin — so there is
+no CORS and `config.js` can stay at its default `apiBase: "/api"`.
 
 ```bash
-# terminal 1 — backend (see ../hashbin-quarkus); on :8080, CORS allows the dev origin
-mvn quarkus:dev
+# terminal 1 — build this app (src -> dist/js, then copy public -> dist)
+npm install && npm run build      # use `npm run watch` to recompile on edits
 
-# terminal 2 — build JS (set config.js apiBase to http://localhost:8080/api first)
-npm install
-npm run watch          # tsc --watch → dist/js
-# then serve dist/ statically and open http://localhost:5173/
-npm run serve
+# terminal 2 — backend; also serves the UI at http://localhost:8080/
+cd ../hashbin-quarkus && mvn quarkus:dev
 ```
+
+After editing frontend sources, re-run `npm run build`, then restart `quarkus:dev` to
+re-copy `dist/` onto the classpath. (Same-origin serving is a file-activated Maven
+profile; disable it there with `-P '!web'`.)
+
+**Separate origins (alternative).** To serve this app on its own port against the API on
+:8080, set `apiBase: "http://localhost:8080/api"` in `public/config.js`, rebuild, then:
+
+```bash
+npm run watch      # tsc --watch -> dist/js
+npm run serve      # zero-dep static server -> http://localhost:5173/
+```
+
+The backend's CORS already allows this, so it also works without the same-origin setup.
 
 ## Build & deploy
 
