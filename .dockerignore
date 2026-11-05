@@ -1,0 +1,19 @@
+# The web image only needs dist/ and nginx.conf.
+node_modules
+.tools
+src
+scripts
+.git
+.github
+.idea
+*.log
+Dockerfile
+.dockerignore
+.gitignore
+.editorconfig
+README.md
+package.json
+package-lock.json
+tsconfig.json
+.nvmrc
+build.sh
