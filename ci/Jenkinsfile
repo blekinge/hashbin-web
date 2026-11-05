@@ -29,13 +29,16 @@ pipeline {
                     securityContext:
                       privileged: true
                     env:
-                    # DOCKER_TLS_CERTDIR lets the rootless daemon write certs; the docker CLI in THIS
-                    # container talks to its own daemon over the local unix socket (the image's default
-                    # DOCKER_HOST). Do NOT set DOCKER_HOST=tcp://localhost:2376 here — 2376 is the TLS
-                    # port and a cert-less client hits it over plain HTTP ("Client sent an HTTP request
-                    # to an HTTPS server").
-                    - name: DOCKER_TLS_CERTDIR
-                      value: /docker-certs
+                    # This container runs its own dockerd; the CLI in it talks to that daemon over the
+                    # ROOTLESS unix socket. docker:dind-rootless does NOT export DOCKER_HOST, and the
+                    # CLI default (/var/run/docker.sock) doesn't exist under rootless -> "no such file
+                    # or directory". Do NOT use tcp://localhost:2376 here: that's the TLS port and a
+                    # cert-less client hits it over plain HTTP ("Client sent an HTTP request to an HTTPS
+                    # server").
+                    - name: XDG_RUNTIME_DIR
+                      value: /run/user/1000
+                    - name: DOCKER_HOST
+                      value: unix:///run/user/1000/docker.sock
                     resources:
                       requests: { memory: "1Gi" }
                       limits:   { memory: "2Gi" }
@@ -89,6 +92,9 @@ pipeline {
                     sh '''
                         set -eu
                         export DOCKER_BUILDKIT=1
+                        # Wait for rootless dockerd to come up (DOCKER_HOST is the unix socket above).
+                        for i in $(seq 1 60); do docker info >/dev/null 2>&1 && break; sleep 1; done
+                        docker info >/dev/null   # fail fast with a clear error if it never came up
                         docker build \
                           --target final \
                           --tag "$IMAGE_TAG" \
