@@ -137,15 +137,17 @@ pipeline {
                         '''
 
                         // On the default branch, retag the just-pushed image as the mutable `latest`.
-                        // Groovy-level guard (not a shell `if`) so the condition reads as pipeline DSL.
-                        // Reads env.PUBLISH_LATEST (set in the script block above) because the local
-                        // publishLatest is out of scope here. Still inside withCredentials, so the
-                        // login from the step above is reused — no second `docker login`.
-                        if (env.PUBLISH_LATEST == 'true') {
-                            sh dockerClientEnv() + '''
-                                docker tag "$IMAGE_TAG" "$LATEST_TAG"
-                                docker push "$LATEST_TAG"
-                            '''
+                        // A declarative `steps`/`withCredentials` block accepts only steps, so the
+                        // Groovy `if` MUST be wrapped in `script { }` — a bare `if` here fails to
+                        // compile with "Expected a step". Reads env.PUBLISH_LATEST (set above); still
+                        // inside withCredentials, so the login from the earlier step is reused.
+                        script {
+                            if (env.PUBLISH_LATEST == 'true') {
+                                sh dockerClientEnv() + '''
+                                    docker tag "$IMAGE_TAG" "$LATEST_TAG"
+                                    docker push "$LATEST_TAG"
+                                '''
+                            }
                         }
                     }
                 }
@@ -156,7 +158,10 @@ pipeline {
     post {
         success {
             echo "Published ${env.IMAGE_TAG}"
-            if (env.PUBLISH_LATEST == 'true') echo "Also published ${env.LATEST_TAG}"
+            // Same declarative rule: wrap the conditional in `script { }` (a bare `if` here is not a step).
+            script {
+                if (env.PUBLISH_LATEST == 'true') echo "Also published ${env.LATEST_TAG}"
+            }
         }
     }
 }
