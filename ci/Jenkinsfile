@@ -7,6 +7,9 @@
 // from source by Dockerfile.ci (a Node stage compiles the TypeScript; nginx serves dist/), so CI
 // never depends on the committed dist/ being fresh.
 //
+// On the default branch (master/main) it ALSO retags the built image as `latest` and pushes it, so a
+// stable name can be referenced; feature/PR branches keep only the immutable full tag.
+//
 // Why `ci/Jenkinsfile` (not the repository root): the org runs two Jenkins controllers that find
 // pipelines by *path* — the legacy one reads `Jenkinsfile` in the root, the current one
 // `ci/Jenkinsfile`. Same rationale as hashbin-quarkus, so both services are built by one
@@ -90,9 +93,22 @@ pipeline {
                             sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' package.json | head -1
                         ''').trim()
 
+                        def repoBase = "${harborName}/${harborLibrary}/${projectName}"
                         def imageVersion = "${version}-${validBranchTag}-sha.${env.GIT_COMMIT}-build.${env.BUILD_NUMBER}"
-                        env.IMAGE_TAG = "${harborName}/${harborLibrary}/${projectName}:${imageVersion}"
+                        env.IMAGE_TAG = "${repoBase}:${imageVersion}"
+
+                        // Default-branch detection that works for BOTH job types: a multibranch job
+                        // sets BRANCH_NAME (a bare "master"); a single-branch job leaves it null and
+                        // only sets GIT_BRANCH (e.g. "origin/master"). Fall back to GIT_BRANCH and
+                        // take the last '/'-separated segment, so "master"/"main" match either way.
+                        def rawBranch = env.BRANCH_NAME ?: env.GIT_BRANCH ?: ''
+                        def shortBranch = rawBranch.contains('/') ? rawBranch.substring(rawBranch.lastIndexOf('/') + 1) : rawBranch
+                        def publishLatest = (shortBranch == 'master' || shortBranch == 'main')
+                        env.LATEST_TAG = "${repoBase}:latest"
+                        env.PUBLISH_LATEST = publishLatest ? 'true' : 'false'
+
                         echo "Building and pushing ${env.IMAGE_TAG}"
+                        if (publishLatest) echo "Also tagging and pushing ${env.LATEST_TAG} (default branch: '${shortBranch}')"
                     }
 
                     // Build from source. DOCKER_BUILDKIT=1 honours `# syntax=docker/dockerfile:1`
@@ -108,11 +124,29 @@ pipeline {
                     withCredentials([usernamePassword(credentialsId: 'jenkins-harbor',
                                                       usernameVariable: 'USERNAME',
                                                       passwordVariable: 'PASSWORD')]) {
+                        // Authenticate once. The token lands in ~/.docker/config.json on the container,
+                        // so the separate push/retag `sh` shells below inherit it (each is a fresh shell,
+                        // but they share the filesystem) — no need to log in again per step.
                         sh dockerClientEnv() + '''
                             printf '%s' "$PASSWORD" | docker login harbor.tools.nyx.kb.dk \
                               --username "$USERNAME" --password-stdin
+                        '''
+
+                        sh dockerClientEnv() + '''
                             docker push "$IMAGE_TAG"
                         '''
+
+                        // On the default branch, retag the just-pushed image as the mutable `latest`.
+                        // Groovy-level guard (not a shell `if`) so the condition reads as pipeline DSL.
+                        // Reads env.PUBLISH_LATEST (set in the script block above) because the local
+                        // publishLatest is out of scope here. Still inside withCredentials, so the
+                        // login from the step above is reused — no second `docker login`.
+                        if (env.PUBLISH_LATEST == 'true') {
+                            sh dockerClientEnv() + '''
+                                docker tag "$IMAGE_TAG" "$LATEST_TAG"
+                                docker push "$LATEST_TAG"
+                            '''
+                        }
                     }
                 }
             }
@@ -122,6 +156,7 @@ pipeline {
     post {
         success {
             echo "Published ${env.IMAGE_TAG}"
+            if (env.PUBLISH_LATEST == 'true') echo "Also published ${env.LATEST_TAG}"
         }
     }
 }
