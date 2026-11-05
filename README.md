@@ -16,6 +16,18 @@ The build output in `dist/` is **pure static files** — host it on any static h
 copy it behind a reverse proxy that also serves the API. It is committed, so you can
 deploy without running a build.
 
+## Toolchain (you don't manage this)
+
+Building needs only `tsc`, and it is fully pinned and self-contained:
+
+- **Deploying needs nothing.** The compiled `dist/` is committed — host it as-is (the
+  backend `web` profile, or an nginx pod, just serve those static files). No Node, no npm.
+- **You rarely build.** A GitHub Action rebuilds `dist/` whenever `src/`/`public/` change
+  and commits it back, so you can just edit `.ts` and push.
+- **To build locally, run `./build.sh`.** It downloads the exact Node pinned in `.nvmrc`
+  into git-ignored `.tools/` (unless a compatible one is already on `PATH`), installs the
+  pinned `typescript`, and emits `dist/`. No global installs, no version guesswork.
+
 ## Pages
 
 | File | Route | Notes |

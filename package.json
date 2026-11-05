@@ -4,6 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Static, dependency-free frontend for the hashbin-quarkus backend.",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsc -p . && npm run copy",
     "copy": "node scripts/copy-static.mjs",
