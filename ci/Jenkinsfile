@@ -29,10 +29,13 @@ pipeline {
                     securityContext:
                       privileged: true
                     env:
+                    # DOCKER_TLS_CERTDIR lets the rootless daemon write certs; the docker CLI in THIS
+                    # container talks to its own daemon over the local unix socket (the image's default
+                    # DOCKER_HOST). Do NOT set DOCKER_HOST=tcp://localhost:2376 here — 2376 is the TLS
+                    # port and a cert-less client hits it over plain HTTP ("Client sent an HTTP request
+                    # to an HTTPS server").
                     - name: DOCKER_TLS_CERTDIR
                       value: /docker-certs
-                    - name: DOCKER_HOST
-                      value: tcp://localhost:2376
                     resources:
                       requests: { memory: "1Gi" }
                       limits:   { memory: "2Gi" }
