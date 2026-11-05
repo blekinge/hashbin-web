@@ -1,0 +1,33 @@
+# syntax=docker/dockerfile:1
+####
+# CI build recipe for the hashbin-web static image: it compiles dist/ FROM SOURCE inside a
+# pinned Node stage, then serves it with nginx. Mirrors hashbin-quarkus's
+# `Dockerfile.native-multi-stage` — CI builds the artifact, so the pushed image does NOT depend
+# on the committed dist/ being up to date. Driven by ci/Jenkinsfile (single build, no tests).
+#
+# The sibling `Dockerfile` (which COPYs the committed dist/) is kept for the hand / ghcr path
+# and for `hashbin-deploy`'s README build step; this file is what Jenkins pushes to Harbor.
+#
+# Manual build (same as the pipeline runs):
+#   DOCKER_BUILDKIT=1 docker build --target final -t hashbin-web:ci -f Dockerfile.ci .
+####
+
+# ---- build: compile TypeScript + copy static assets -> dist/ -------------------------
+# Node version pinned to match .nvmrc so CI builds with the exact toolchain local devs get.
+FROM docker.io/library/node:22.23.4-alpine AS build
+WORKDIR /app
+# Install the pinned dev dependency (typescript) from the lockfile first — cached layer.
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
+# Compile (tsc: src/**/*.ts -> dist/js) then copy static assets (public/* -> dist/).
+COPY tsconfig.json ./
+COPY scripts ./scripts
+COPY src ./src
+COPY public ./public
+RUN npm run build
+
+# ---- final: nginx serving the freshly built dist/ (this is what gets tagged & pushed) --
+FROM docker.io/nginxinc/nginx-unprivileged:1.27-alpine AS final
+COPY --chown=101:101 nginx.conf /etc/nginx/conf.d/default.conf
+COPY --chown=101:101 --from=build /app/dist/ /usr/share/nginx/html/
+EXPOSE 8080

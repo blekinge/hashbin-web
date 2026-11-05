@@ -1,19 +1,15 @@
-# The web image only needs dist/ and nginx.conf.
+# Noise that neither image recipe reads. Everything else MUST stay in the build context:
+# the hand `Dockerfile` COPYs nginx.conf + dist/, and the CI `Dockerfile.ci` compiles from
+# src/ + public/ + scripts/ + package*.json + tsconfig.json.
 node_modules
 .tools
-src
-scripts
 .git
 .github
 .idea
 *.log
 Dockerfile
+Dockerfile.ci
 .dockerignore
 .gitignore
 .editorconfig
 README.md
-package.json
-package-lock.json
-tsconfig.json
-.nvmrc
-build.sh

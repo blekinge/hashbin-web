@@ -22,11 +22,15 @@ Building needs only `tsc`, and it is fully pinned and self-contained:
 
 - **Deploying needs nothing.** The compiled `dist/` is committed — host it as-is (the
   backend `web` profile, or an nginx pod, just serve those static files). No Node, no npm.
-- **You rarely build.** A GitHub Action rebuilds `dist/` whenever `src/`/`public/` change
-  and commits it back, so you can just edit `.ts` and push.
-- **To build locally, run `./build.sh`.** It downloads the exact Node pinned in `.nvmrc`
-  into git-ignored `.tools/` (unless a compatible one is already on `PATH`), installs the
-  pinned `typescript`, and emits `dist/`. No global installs, no version guesswork.
+- **CI builds the image from source.** Jenkins runs `Dockerfile.ci` (a Node stage compiles
+  `src/` + `public/` into `dist/`, nginx serves it) and pushes the image to the org Harbor —
+  so the *published image* is always fresh, regardless of the committed `dist/`. See "CI
+  (Jenkins)" below.
+- **To refresh the committed `dist/`, run `./build.sh`.** Do this before editing-and-committing
+  `src/`, because the committed `dist/` is what the hand `Dockerfile` (ghcr) build and the
+  backend's same-origin `web` dev profile serve. Jenkins does **not** commit `dist/` back.
+  `./build.sh` downloads the exact Node pinned in `.nvmrc` into git-ignored `.tools/` (unless a
+  compatible one is already on `PATH`), installs the pinned `typescript`, and emits `dist/`.
 
 ## Pages
 
@@ -88,6 +92,23 @@ npm run build          # tsc → dist/js, then copy public/* → dist/
 Deploy the contents of `dist/` to any static host. Set `apiBase` in `dist/config.js` to
 match wherever the API is reachable from that host.
 
+## CI (Jenkins)
+
+CI is a self-contained pipeline at [`ci/Jenkinsfile`](ci/Jenkinsfile) — **no GitHub Actions**.
+It runs in a Kubernetes pod with a `docker:dind-rootless` container that builds the image and
+pushes it to the org **Harbor** (`harbor.tools.nyx.kb.dk/<BITBUCKET_PROJECT_KEY>/hashbin-web:
+<version>-<branch>-sha.<sha>-build.<n>`), using the `jenkins-harbor` credential. Same shape as
+the `hashbin-quarkus` pipeline, minus the JDK/test stage.
+
+The image is built **from source** by [`Dockerfile.ci`](Dockerfile.ci): a pinned
+`node:22.23.4-alpine` stage runs `npm ci` + `npm run build` (tsc → `dist/js`, then
+`copy-static.mjs` copies `public/` → `dist/`), and a `nginxinc/nginx-unprivileged` stage serves
+`dist/` on port 8080. Because CI compiles from `src/`, the pushed image never depends on the
+committed `dist/` being current.
+
+The plain [`Dockerfile`](Dockerfile) (single stage, `COPY dist/`) remains for the hand / ghcr
+build and `hashbin-deploy`'s README build step.
+
 ## Layout
 
 ```
@@ -103,4 +124,7 @@ public/config.js    # runtime API base
 public/styles.css   # single hand-written stylesheet (dark-mode aware)
 scripts/copy-static.mjs   # build: copy public/ → dist/
 scripts/serve.mjs         # zero-dep static server for local preview
+Dockerfile                # hand/ghcr image (COPYs committed dist/)
+Dockerfile.ci             # CI image: builds dist/ from source (node → nginx)
+ci/Jenkinsfile            # Jenkins: docker build Dockerfile.ci → push to Harbor
 ```

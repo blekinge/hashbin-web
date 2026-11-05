@@ -1,0 +1,114 @@
+// Self-contained Jenkins pipeline for the hashbin-web static frontend: build the container
+// image and push it to the org Harbor. It replaces the former GitHub Actions workflow —
+// this project does not use GitHub Actions.
+//
+// Mirrors hashbin-quarkus's ci/Jenkinsfile (same Harbor naming + `jenkins-harbor` credential),
+// minus the JDK/test stage: a static site needs only an image build, and the image is produced
+// from source by Dockerfile.ci (a Node stage compiles the TypeScript; nginx serves dist/), so CI
+// never depends on the committed dist/ being fresh.
+//
+// Why `ci/Jenkinsfile` (not the repository root): the org runs two Jenkins controllers that find
+// pipelines by *path* — the legacy one reads `Jenkinsfile` in the root, the current one
+// `ci/Jenkinsfile`. Same rationale as hashbin-quarkus, so both services are built by one
+// controller and a PR is gated by exactly one real build.
+
+pipeline {
+    agent {
+        kubernetes {
+            yaml """
+                apiVersion: v1
+                kind: Pod
+                spec:
+                  containers:
+                  # docker: both the CLI and the daemon that build+push the image. Rootless
+                  # dind is unprivileged-capable, but privileged keeps BuildKit happy across
+                  # kernel/apparmor variants — same setup hashbin-quarkus uses for its image build.
+                  - name: docker
+                    image: docker:dind-rootless
+                    tty: true
+                    securityContext:
+                      privileged: true
+                    env:
+                    - name: DOCKER_TLS_CERTDIR
+                      value: /docker-certs
+                    - name: DOCKER_HOST
+                      value: tcp://localhost:2376
+                    resources:
+                      requests: { memory: "1Gi" }
+                      limits:   { memory: "2Gi" }
+                    volumeMounts:
+                    - name: docker-certs
+                      mountPath: /docker-certs
+                  volumes:
+                  - name: docker-certs
+                    emptyDir: {}
+                """
+            retries 2
+        }
+    }
+
+    options {
+        disableConcurrentBuilds()
+        timeout(time: 20, unit: 'MINUTES')       // cold pull of the node + nginx base images
+        buildDiscarder(logRotator(numToKeepStr: '5'))
+    }
+
+    stages {
+        stage('Build and push image') {
+            steps {
+                container('docker') {
+                    script {
+                        // Image coordinates derived from the Bitbucket-for-Jenkins env vars,
+                        // exactly as hashbin-quarkus does: harbor.tools.nyx.kb.dk/<key>/<repo>.
+                        def harborName = 'harbor.tools.nyx.kb.dk'
+                        def harborLibrary = "${env.BITBUCKET_PROJECT_KEY}".toLowerCase()
+                        def projectName = "${env.BITBUCKET_REPOSITORY}"
+
+                        def validBranchTag = (env.BRANCH_NAME ?: 'dev')
+                            .replace('/', '-').replace('+', '-').replace('_', '-')
+                            .toLowerCase().take(30).replaceAll(/-+$/, '')
+
+                        // Read the version out of package.json without needing Node (the dind image
+                        // has only busybox coreutils): the "version": "x.y.z" line.
+                        def version = sh(returnStdout: true, script: '''
+                            sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' package.json | head -1
+                        ''').trim()
+
+                        def imageVersion = "${version}-${validBranchTag}-sha.${env.GIT_COMMIT}-build.${env.BUILD_NUMBER}"
+                        env.IMAGE_TAG = "${harborName}/${harborLibrary}/${projectName}:${imageVersion}"
+                        echo "Building and pushing ${env.IMAGE_TAG}"
+                    }
+
+                    // Build from source. DOCKER_BUILDKIT=1 honours `# syntax=docker/dockerfile:1`
+                    // and enables the modern builder; --target final stops after the nginx stage.
+                    sh '''
+                        set -eu
+                        export DOCKER_BUILDKIT=1
+                        docker build \
+                          --target final \
+                          --tag "$IMAGE_TAG" \
+                          --file Dockerfile.ci \
+                          .
+                    '''
+
+                    withCredentials([usernamePassword(credentialsId: 'jenkins-harbor',
+                                                      usernameVariable: 'USERNAME',
+                                                      passwordVariable: 'PASSWORD')]) {
+                        sh '''
+                            set -eu
+                            printf '%s' "$PASSWORD" | docker login harbor.tools.nyx.kb.dk \
+                              --username "$USERNAME" --password-stdin
+                            docker push "$IMAGE_TAG"
+                        '''
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Published ${env.IMAGE_TAG}"
+        }
+    }
+}
