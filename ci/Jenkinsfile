@@ -12,6 +12,25 @@
 // `ci/Jenkinsfile`. Same rationale as hashbin-quarkus, so both services are built by one
 // controller and a PR is gated by exactly one real build.
 
+// Shell prelude for steps that drive the docker CLI inside the dind container.
+// docker:dind-rootless runs dockerd as a non-root user, whose socket is at $XDG_RUNTIME_DIR/docker.sock
+// (i.e. /run/user/<uid>), and the image does NOT export DOCKER_HOST. Do NOT hardcode the uid — derive
+// it from the live `id -u` so it is correct whatever user the build agent runs as. Also waits for the
+// daemon to answer before returning. (tcp://localhost:2376 is the alternative, but it is TLS-only and
+// needs client certs; the derived unix socket is simpler and uid-agnostic.)
+String dockerClientEnv() {
+    return '''
+        set -eu
+        RUNTIME="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+        [ -S "$RUNTIME/docker.sock" ] || RUNTIME="/run/user/$(id -u)"
+        export XDG_RUNTIME_DIR="$RUNTIME"
+        export DOCKER_HOST="unix://$RUNTIME/docker.sock"
+        export DOCKER_BUILDKIT=1
+        for i in $(seq 1 60); do docker info >/dev/null 2>&1 && break; sleep 1; done
+        docker info >/dev/null   # fail fast, clearly, if the daemon never comes up
+    '''
+}
+
 pipeline {
     agent {
         kubernetes {
@@ -28,17 +47,6 @@ pipeline {
                     tty: true
                     securityContext:
                       privileged: true
-                    env:
-                    # This container runs its own dockerd; the CLI in it talks to that daemon over the
-                    # ROOTLESS unix socket. docker:dind-rootless does NOT export DOCKER_HOST, and the
-                    # CLI default (/var/run/docker.sock) doesn't exist under rootless -> "no such file
-                    # or directory". Do NOT use tcp://localhost:2376 here: that's the TLS port and a
-                    # cert-less client hits it over plain HTTP ("Client sent an HTTP request to an HTTPS
-                    # server").
-                    - name: XDG_RUNTIME_DIR
-                      value: /run/user/1000
-                    - name: DOCKER_HOST
-                      value: unix:///run/user/1000/docker.sock
                     resources:
                       requests: { memory: "1Gi" }
                       limits:   { memory: "2Gi" }
@@ -89,12 +97,7 @@ pipeline {
 
                     // Build from source. DOCKER_BUILDKIT=1 honours `# syntax=docker/dockerfile:1`
                     // and enables the modern builder; --target final stops after the nginx stage.
-                    sh '''
-                        set -eu
-                        export DOCKER_BUILDKIT=1
-                        # Wait for rootless dockerd to come up (DOCKER_HOST is the unix socket above).
-                        for i in $(seq 1 60); do docker info >/dev/null 2>&1 && break; sleep 1; done
-                        docker info >/dev/null   # fail fast with a clear error if it never came up
+                    sh dockerClientEnv() + '''
                         docker build \
                           --target final \
                           --tag "$IMAGE_TAG" \
@@ -105,8 +108,7 @@ pipeline {
                     withCredentials([usernamePassword(credentialsId: 'jenkins-harbor',
                                                       usernameVariable: 'USERNAME',
                                                       passwordVariable: 'PASSWORD')]) {
-                        sh '''
-                            set -eu
+                        sh dockerClientEnv() + '''
                             printf '%s' "$PASSWORD" | docker login harbor.tools.nyx.kb.dk \
                               --username "$USERNAME" --password-stdin
                             docker push "$IMAGE_TAG"
